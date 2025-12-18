@@ -1,0 +1,106 @@
+name: Reusable Android Build and Detekt
+
+on:
+  workflow_call:
+    secrets:
+      GRADLE_ENCRYPTION_KEY:
+        required: false
+      DATADOG_APPLICATION_ID:
+        required: false
+      DATADOG_CLIENT_TOKEN:
+        required: false
+      CODECOV_TOKEN:
+        required: false
+    inputs:
+      upload_artifacts:
+        description: 'Whether to upload build and Detekt artifacts'
+        required: false
+        type: boolean
+        default: true
+
+jobs:
+  build_and_detekt:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+      attestations: write
+    timeout-minutes: 35
+    env:
+      DATADOG_APPLICATION_ID: ${{ secrets.DATADOG_APPLICATION_ID }}
+      DATADOG_CLIENT_TOKEN: ${{ secrets.DATADOG_CLIENT_TOKEN }}
+      MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
+
+    steps:
+
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          submodules: 'recursive'
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v5
+        with:
+          java-version: '21'
+          distribution: 'jetbrains'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v5
+        with:
+          cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
+          build-scan-publish: true
+          build-scan-terms-of-use-url: 'https://gradle.com/terms-of-service'
+          build-scan-terms-of-use-agree: 'yes'
+          add-job-summary: always
+
+      - name: Calculate Version Code
+        id: calculate_version_code
+        uses: ./.github/actions/calculate-version-code
+
+      - name: Expose Version Code as Environment Variable
+        run: echo "VERSION_CODE=${{ steps.calculate_version_code.outputs.versionCode }}" >> $GITHUB_ENV
+
+      - name: Load secrets
+        if: env.DATADOG_APPLICATION_ID != '' && env.DATADOG_CLIENT_TOKEN != ''
+        run: |
+          echo "datadogApplicationId=$DATADOG_APPLICATION_ID" >> ./secrets.properties
+          echo "datadogClientToken=$DATADOG_CLIENT_TOKEN" >> ./secrets.properties
+      - name: Run Spotless, Detekt, Build, Lint, and Local Tests
+        run: ./gradlew spotlessCheck detekt lintDebug :app:assembleDebug koverXmlReport --configuration-cache --scan
+        env:
+          VERSION_CODE: ${{ env.VERSION_CODE }}
+
+      - name: Upload coverage reports to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          slug: meshtastic/Meshtastic-Android
+          files: app/build/reports/kover/xml/report.xml
+
+      - name: Upload F-Droid debug artifact
+        if: ${{ inputs.upload_artifacts }}
+        uses: actions/upload-artifact@v5
+        with:
+          name: fdroidDebug
+          path: app/build/outputs/apk/fdroid/debug/app-fdroid-debug.apk
+          retention-days: 14
+      - name: Upload Google debug artifact
+        if: ${{ inputs.upload_artifacts }}
+        uses: actions/upload-artifact@v5
+        with:
+          name: googleDebug
+          path: app/build/outputs/apk/google/debug/app-google-debug.apk
+          retention-days: 14
+
+      - name: Upload reports
+        if: ${{ inputs.upload_artifacts }}
+        uses: actions/upload-artifact@v5
+        with:
+          name: upload-reports
+          path: |
+            app/build/reports
+            **/build/reports/detekt
+          retention-days: 14

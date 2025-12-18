@@ -1,0 +1,34 @@
+# .github/release.yml
+
+changelog:
+  categories:
+    - title: 🏗️ Features
+      labels:
+        - enhancement
+      exclude:
+        labels:
+          - dependencies
+
+    - title: 🛠️Fixes
+      labels:
+        - '*'
+      exclude:
+        labels:
+          - enhancement
+          - dependencies
+          - repo
+          - automation
+          - release
+
+    - title: 👷Dependencies
+      labels:
+        - dependencies
+
+    - title: 🧱Repo
+      labels:
+        - repo
+
+    - title: 🤖Automated
+      labels:
+        - automation
+        - release
