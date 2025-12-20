@@ -21,7 +21,7 @@
     <style name="SplashTheme.NightAdjusted" parent="Theme.SplashScreen">
         <item name="android:windowLightStatusBar">true</item>
         <item name="android:windowLightNavigationBar" tools:targetApi="27">true</item>
-        <item name="windowSplashScreenBackground">#FFFFFF</item>
+        <item name="windowSplashScreenBackground">#000000</item>
     </style>
 
     <style name="SplashTheme" parent="SplashTheme.NightAdjusted">
