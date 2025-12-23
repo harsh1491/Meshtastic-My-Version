@@ -15,11 +15,11 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-import com.geeksville.mesh.buildlogic.GitVersionValueSource
+//import com.geeksville.mesh.buildlogic.GitVersionValueSource
 import java.io.FileInputStream
 import java.util.Properties
 
-val gitVersionProvider = providers.of(GitVersionValueSource::class.java) {}
+//val gitVersionProvider = providers.of(GitVersionValueSource::class.java) {}
 
 plugins {
     alias(libs.plugins.meshtastic.android.application)
@@ -64,20 +64,10 @@ android {
         minSdk = configProperties.getProperty("MIN_SDK").toInt()
         targetSdk = configProperties.getProperty("TARGET_SDK").toInt()
 
-        val vcOffset = configProperties.getProperty("VERSION_CODE_OFFSET")?.toInt() ?: 0
-        println("Version code offset: $vcOffset")
-        versionCode =
-            (
-                project.findProperty("android.injected.version.code")?.toString()?.toInt()
-                    ?: System.getenv("VERSION_CODE")?.toInt()
-                    ?: (gitVersionProvider.get().toInt() + vcOffset)
-                )
-        versionName =
-            (
-                project.findProperty("android.injected.version.name")?.toString()
-                    ?: System.getenv("VERSION_NAME")
-                    ?: configProperties.getProperty("VERSION_NAME_BASE")
-                )
+        // Hardcoded version to bypass Git error
+        versionCode = 230
+        versionName = "2.3.0-debug"
+
         buildConfigField("String", "MIN_FW_VERSION", "\"${configProperties.getProperty("MIN_FW_VERSION")}\"")
         buildConfigField("String", "ABS_MIN_FW_VERSION", "\"${configProperties.getProperty("ABS_MIN_FW_VERSION")}\"")
         // We have to list all translated languages here,
@@ -246,6 +236,8 @@ dependencies {
     implementation(libs.androidx.work.runtime.ktx)
     implementation(libs.accompanist.permissions)
     implementation(libs.timber)
+
+    implementation("androidx.hilt:hilt-navigation-compose:1.2.0")
 
     implementation(libs.nordic)
 

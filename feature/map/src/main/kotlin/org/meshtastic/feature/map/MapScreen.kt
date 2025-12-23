@@ -1,7 +1,7 @@
 package org.meshtastic.feature.map
 
+// --- CORRECT IMPORTS ---
 import android.Manifest
-//import android.graphics.Color
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
@@ -29,38 +29,42 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
-import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+
+// 1. FIX HILT IMPORT
+import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+
+// 2. TEMPORARY FIX FOR RES (Comment these out if they are red)
+// import org.meshtastic.core.strings.Res
+// import org.meshtastic.core.strings.map
+// import org.jetbrains.compose.resources.stringResource
+
 import org.meshtastic.core.ui.component.MainAppBar
-import org.meshtastic.core.strings.Res
-import org.meshtastic.core.strings.map
-import org.jetbrains.compose.resources.stringResource
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.overlay.Polygon
 import java.util.UUID
-
-import androidx.compose.foundation.background
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.unit.sp
 
 @Composable
 fun MapScreen(
     onClickNodeChip: (Int) -> Unit,
     navigateToNodeDetails: (Int) -> Unit,
     modifier: Modifier = Modifier,
+    // FIX: This should work now with the import above
     mapViewModel: MapViewModel = hiltViewModel(),
 ) {
     val ourNodeInfo by mapViewModel.ourNodeInfo.collectAsStateWithLifecycle()
     val isConnected by mapViewModel.isConnected.collectAsStateWithLifecycle()
-    // --- NEW: Get the list of friends ---
     val nodes by mapViewModel.nodesWithPosition.collectAsStateWithLifecycle()
+    val networkZones by mapViewModel.incomingZones.collectAsStateWithLifecycle()
 
     var isDrawingMode by remember { mutableStateOf(false) }
     var isDeleteMode by remember { mutableStateOf(false) }
     var triggerCenterLocation by remember { mutableStateOf(0) }
     var hasLocationPermission by remember { mutableStateOf(false) }
 
+    // Use the MapZone defined in MapViewModel.kt
     val zones = remember { mutableStateListOf<MapZone>() }
     var showColorDialog by remember { mutableStateOf(false) }
     var tempCenter by remember { mutableStateOf<GeoPoint?>(null) }
@@ -83,7 +87,7 @@ fun MapScreen(
         modifier = modifier,
         topBar = {
             MainAppBar(
-                title = stringResource(Res.string.map),
+                title = "Map",
                 ourNode = ourNodeInfo,
                 showNodeChip = ourNodeInfo != null && isConnected,
                 canNavigateUp = false,
@@ -107,7 +111,7 @@ fun MapScreen(
                         isDeleteMode = !isDeleteMode
                         if(isDeleteMode) isDrawingMode = false
                     },
-                    containerColor = if (isDeleteMode) androidx.compose.ui.graphics.Color.Red else ButtonDefaults.buttonColors().containerColor,
+                    containerColor = if (isDeleteMode) Color.Red else ButtonDefaults.buttonColors().containerColor,
                     modifier = Modifier.padding(bottom = 16.dp)
                 ) { Icon(Icons.Default.Delete, contentDescription = "Delete Zones") }
 
@@ -128,7 +132,8 @@ fun MapScreen(
                 isDrawingMode = isDrawingMode,
                 isDeleteMode = isDeleteMode,
                 zones = zones,
-                nodes = nodes, // <--- PASS THE NODES HERE
+                networkZones = networkZones, // Passing network zones
+                nodes = nodes,
                 triggerCenterLocation = triggerCenterLocation,
                 hasLocationPermission = hasLocationPermission,
                 onCircleFinished = { center, radius ->
@@ -140,37 +145,9 @@ fun MapScreen(
                     showDeleteConfirmDialog = zoneClicked
                 }
             )
-
-            // --- PASTE THIS DEBUG BOX BELOW MapView ---
-            Column(
-                modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .padding(8.dp)
-                    .background(Color.White.copy(alpha = 0.8f))
-                    .padding(4.dp)
-            ) {
-                Text("Total Nodes: ${nodes.size}", color = Color.Black)
-
-                // Show info for the first 3 nodes found
-                nodes.take(3).forEach { node ->
-                    // Try to read position from both possible places
-                    val posObj = node.position
-                    val lat = posObj?.latitudeI ?: 0
-                    val lon = posObj?.longitudeI ?: 0
-
-                    Text(
-                        text = "${node.user?.shortName}: $lat / $lon",
-                        fontSize = 10.sp,
-                        lineHeight = 12.sp,
-                        color = if (lat != 0) Color.Blue else Color.Red
-                    )
-                }
-            }
-            // ------------------------------------------
         }
     }
 
-    // ... (Keep the Color Dialog and Delete Dialog code same as before) ...
     if (showColorDialog && tempCenter != null) {
         AlertDialog(
             onDismissRequest = { showColorDialog = false },
@@ -180,10 +157,18 @@ fun MapScreen(
                     val addZone = { color: Int ->
                         val circlePoints = Polygon.pointsAsCircle(tempCenter, tempRadius.toDouble())
                         zones.add(MapZone(UUID.randomUUID().toString(), tempCenter!!, tempRadius, color, circlePoints))
+
+                        // Broadcast the zone
+                        mapViewModel.sendZone(
+                            tempCenter!!.latitude,
+                            tempCenter!!.longitude,
+                            tempRadius,
+                            color
+                        )
+
                         showColorDialog = false
                         isDrawingMode = false
                     }
-                    // FIX: Use 'android.graphics.Color.argb' explicitly here
                     Button(onClick = { addZone(android.graphics.Color.argb(100, 255, 0, 0)) },
                         colors = ButtonDefaults.buttonColors(containerColor = Color.Red),
                         modifier = Modifier.padding(vertical = 4.dp)) { Text("Red (Danger)") }

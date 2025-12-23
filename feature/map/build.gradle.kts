@@ -53,6 +53,8 @@ dependencies {
     implementation(libs.osmdroid.android)
     implementation(libs.timber)
 
+    implementation("androidx.hilt:hilt-navigation-compose:1.2.0")
+
     googleImplementation(libs.location.services)
 
 }

@@ -22,19 +22,15 @@ import org.osmdroid.views.overlay.mylocation.GpsMyLocationProvider
 import org.osmdroid.views.overlay.mylocation.MyLocationNewOverlay
 import java.io.File
 
-data class MapZone(
-    val id: String,
-    val center: GeoPoint,
-    val radius: Float,
-    val color: Int,
-    val polygonPoints: List<GeoPoint>
-)
+// NOTE: MapZone is defined in MapViewModel.kt now.
+// Do NOT uncomment it here, or you will get a "Redefinition" error.
 
 @Composable
 fun MapView(
     isDrawingMode: Boolean,
     isDeleteMode: Boolean,
-    zones: List<MapZone>,
+    zones: List<MapZone>,        // Local zones
+    networkZones: List<MapZone>, // Network zones
     nodes: List<Node>,
     triggerCenterLocation: Int,
     hasLocationPermission: Boolean,
@@ -89,17 +85,18 @@ fun MapView(
                 mapView.overlays.remove(drawOverlay)
             }
 
-            // 3. Draw Zones
+            // 3. Clear Old Zones
             val polygonsToRemove = mapView.overlays.filterIsInstance<Polygon>()
             mapView.overlays.removeAll(polygonsToRemove)
 
+            // 4. Draw LOCAL Zones
             zones.forEach { zone ->
                 val polygon = Polygon().apply {
                     points = zone.polygonPoints
                     fillPaint.color = zone.color
                     outlinePaint.color = Color.parseColor("#80444444")
                     outlinePaint.strokeWidth = 3f
-                    title = zone.id
+                    title = "My Zone"
                     setOnClickListener { _, _, _ ->
                         if (isDeleteMode) {
                             onZoneClick(zone)
@@ -111,24 +108,37 @@ fun MapView(
                 mapView.overlays.add(polygon)
             }
 
-            // 4. Draw Friend Markers
+            // 5. Draw NETWORK Zones
+            networkZones.forEach { zone ->
+                val polygon = Polygon().apply {
+                    points = zone.polygonPoints
+                    fillPaint.color = zone.color
+                    outlinePaint.color = Color.BLUE
+                    outlinePaint.strokeWidth = 5f
+                    title = "Team Zone"
+                }
+                mapView.overlays.add(polygon)
+            }
+
+            // 6. Draw Friend Markers
             val markersToRemove = mapView.overlays.filterIsInstance<Marker>()
             mapView.overlays.removeAll(markersToRemove)
 
             nodes.forEach { node ->
-                val lat = node.position.latitudeI * 1e-7
-                val lon = node.position.longitudeI * 1e-7
-
-                val marker = Marker(mapView).apply {
-                    position = GeoPoint(lat, lon)
-                    title = node.user.shortName ?: "Unknown"
-                    snippet = node.user.longName ?: ""
-                    // No icon set = uses default pin automatically
-                    setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+                if (node.position != null) {
+                    val lat = node.position.latitudeI * 1e-7
+                    val lon = node.position.longitudeI * 1e-7
+                    if (lat != 0.0 && lon != 0.0) {
+                        val marker = Marker(mapView).apply {
+                            position = GeoPoint(lat, lon)
+                            title = node.user?.shortName ?: "Unknown"
+                            snippet = node.user?.longName ?: ""
+                            setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+                        }
+                        mapView.overlays.add(marker)
+                    }
                 }
-                mapView.overlays.add(marker)
             }
-
             mapView.invalidate()
         }
     )
