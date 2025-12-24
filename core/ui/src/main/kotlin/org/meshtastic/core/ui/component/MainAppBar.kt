@@ -48,6 +48,9 @@ import org.meshtastic.core.ui.component.preview.BooleanProvider
 import org.meshtastic.core.ui.component.preview.previewNode
 import org.meshtastic.core.ui.theme.AppTheme
 
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.graphics.Color
+
 @OptIn(ExperimentalMaterial3ExpressiveApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun MainAppBar(
@@ -86,9 +89,14 @@ fun MainAppBar(
             {
                 IconButton(enabled = false, onClick = {}) {
                     Icon(
-                        imageVector =
-                        ImageVector.vectorResource(id = org.meshtastic.core.ui.R.drawable.ic_meshtastic),
-                        contentDescription = stringResource(Res.string.application_icon),
+                        // 1. Point to your new file name (e.g., my_logo)
+                        painter = painterResource(id = org.meshtastic.core.ui.R.drawable.my_logo),
+
+                        // 2. This keeps your logo's original colors (prevents it from turning black/white)
+                        tint = Color.Unspecified,
+
+                        contentDescription = "App Logo",
+                        modifier = Modifier.padding(8.dp) // Optional: Adjust size if needed
                     )
                 }
             }
