@@ -111,6 +111,20 @@ class MapViewModel @Inject constructor(
     // 6. Sender Function
     fun sendZone(centerLat: Double, centerLon: Double, radius: Float, colorInt: Int) {
         viewModelScope.launch(Dispatchers.IO) {
+            // CHECK 1: Do we have a radio service?
+            val service = serviceRepository.meshService
+            if (service == null) {
+                // Radio service not running yet. Stop here to prevent crash.
+                return@launch
+            }
+
+            // CHECK 2: Do we know our own Node ID yet?
+            // If ourNodeInfo is null, the radio isn't fully ready.
+            if (ourNodeInfo.value == null) {
+                // Radio not ready. Stop here.
+                return@launch
+            }
+
             val type = when (colorInt) {
                 android.graphics.Color.argb(100, 255, 0, 0) -> 1
                 android.graphics.Color.argb(100, 255, 255, 0) -> 2
@@ -118,7 +132,13 @@ class MapViewModel @Inject constructor(
             }
             val message = "ZONE|$centerLat|$centerLon|${radius.toInt()}|$type"
             val packet = DataPacket(to = "^all", channel = 0, text = message)
-            serviceRepository.meshService?.send(packet)
+
+            try {
+                service.send(packet)
+            } catch (e: Exception) {
+                // If sending fails (e.g., radio disconnected mid-send), catch it so app doesn't crash.
+                e.printStackTrace()
+            }
         }
     }
 }
