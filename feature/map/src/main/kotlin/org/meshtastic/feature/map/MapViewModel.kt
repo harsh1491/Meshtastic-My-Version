@@ -22,7 +22,6 @@ import org.osmdroid.views.overlay.Polygon
 import java.util.UUID
 import javax.inject.Inject
 
-// --- 1. DEFINE MAPZONE HERE ---
 data class MapZone(
     val id: String,
     val center: GeoPoint,
@@ -37,15 +36,23 @@ class MapViewModel @Inject constructor(
     private val serviceRepository: ServiceRepository
 ) : ViewModel() {
 
-    // 2. My Node Info
+    // --- STATIC MEMORY (Survives Tab Switching) ---
+    companion object {
+        // These live as long as the App is open. They never die on navigation.
+        private val _staticLocalZones = MutableStateFlow<List<MapZone>>(emptyList())
+
+        // We also save the camera statically so it doesn't reset if VM dies
+        var staticCenter: GeoPoint? = null
+        var staticZoom: Double = 15.0
+    }
+    // ----------------------------------------------
+
     val ourNodeInfo: StateFlow<Node?> = nodeRepository.ourNodeInfo
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
-    // 3. Connection Status
     val isConnected: StateFlow<Boolean> = flowOf(true)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
 
-    // 4. Friend Locations
     val nodesWithPosition: StateFlow<List<Node>> = nodeRepository.nodeDBbyNum
         .map { nodeMap ->
             nodeMap.values.filter { node ->
@@ -58,26 +65,46 @@ class MapViewModel @Inject constructor(
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    // 5. Incoming Zones (From Network)
+    // Use the STATIC list for zones
+    val localZones = _staticLocalZones.asStateFlow()
+
     private val _incomingZones = MutableStateFlow<List<MapZone>>(emptyList())
     val incomingZones = _incomingZones.asStateFlow()
 
     init {
-        // Start Listening for "ZONE" messages
         viewModelScope.launch(Dispatchers.IO) {
             serviceRepository.meshPacketFlow.collect { packet ->
                 try {
                     if (packet.decoded.portnum.number == Portnums.PortNum.TEXT_MESSAGE_APP_VALUE) {
                         val text = packet.decoded.payload.toStringUtf8()
-                        if (text.startsWith("ZONE|")) {
-                            parseAndAddZone(text)
-                        }
+                        if (text.startsWith("ZONE|")) parseAndAddZone(text)
                     }
-                } catch (e: Exception) {
-                    // Ignore bad packets
-                }
+                } catch (e: Exception) { }
             }
         }
+    }
+
+    // --- Actions ---
+
+    fun saveMapState(center: GeoPoint, zoom: Double) {
+        staticCenter = center
+        staticZoom = zoom
+    }
+
+    // Helper to get saved state for the UI
+    fun getSavedCenter(): GeoPoint? = staticCenter
+    fun getSavedZoom(): Double = staticZoom
+
+    fun addLocalZone(zone: MapZone) {
+        val current = _staticLocalZones.value.toMutableList()
+        current.add(zone)
+        _staticLocalZones.value = current
+    }
+
+    fun removeLocalZone(zone: MapZone) {
+        val current = _staticLocalZones.value.toMutableList()
+        current.remove(zone)
+        _staticLocalZones.value = current
     }
 
     private fun parseAndAddZone(text: String) {
@@ -88,42 +115,25 @@ class MapViewModel @Inject constructor(
                 val lon = parts[2].toDouble()
                 val rad = parts[3].toFloat()
                 val type = parts[4].toInt()
-
                 val color = when (type) {
                     1 -> android.graphics.Color.argb(100, 255, 0, 0)
                     2 -> android.graphics.Color.argb(100, 255, 255, 0)
                     else -> android.graphics.Color.argb(100, 0, 255, 0)
                 }
-
                 val center = GeoPoint(lat, lon)
                 val points = Polygon.pointsAsCircle(center, rad.toDouble())
                 val newZone = MapZone(UUID.randomUUID().toString(), center, rad, color, points)
-
                 val currentList = _incomingZones.value.toMutableList()
                 currentList.add(newZone)
                 _incomingZones.value = currentList
             }
-        } catch (e: Exception) {
-            // parsing failed
-        }
+        } catch (e: Exception) { }
     }
 
-    // 6. Sender Function
     fun sendZone(centerLat: Double, centerLon: Double, radius: Float, colorInt: Int) {
         viewModelScope.launch(Dispatchers.IO) {
-            // CHECK 1: Do we have a radio service?
-            val service = serviceRepository.meshService
-            if (service == null) {
-                // Radio service not running yet. Stop here to prevent crash.
-                return@launch
-            }
-
-            // CHECK 2: Do we know our own Node ID yet?
-            // If ourNodeInfo is null, the radio isn't fully ready.
-            if (ourNodeInfo.value == null) {
-                // Radio not ready. Stop here.
-                return@launch
-            }
+            val service = serviceRepository.meshService ?: return@launch
+            if (ourNodeInfo.value == null) return@launch
 
             val type = when (colorInt) {
                 android.graphics.Color.argb(100, 255, 0, 0) -> 1
@@ -132,13 +142,7 @@ class MapViewModel @Inject constructor(
             }
             val message = "ZONE|$centerLat|$centerLon|${radius.toInt()}|$type"
             val packet = DataPacket(to = "^all", channel = 0, text = message)
-
-            try {
-                service.send(packet)
-            } catch (e: Exception) {
-                // If sending fails (e.g., radio disconnected mid-send), catch it so app doesn't crash.
-                e.printStackTrace()
-            }
+            try { service.send(packet) } catch (e: Exception) { e.printStackTrace() }
         }
     }
 }

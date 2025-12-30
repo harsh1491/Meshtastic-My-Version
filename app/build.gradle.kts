@@ -239,6 +239,8 @@ dependencies {
 
     implementation("androidx.hilt:hilt-navigation-compose:1.2.0")
 
+    implementation(projects.core.strings)
+
     implementation(libs.nordic)
 
     debugImplementation(libs.androidx.compose.ui.test.manifest)

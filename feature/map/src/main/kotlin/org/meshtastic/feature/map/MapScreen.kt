@@ -1,6 +1,5 @@
 package org.meshtastic.feature.map
 
-// --- CORRECT IMPORTS ---
 import android.Manifest
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -23,7 +22,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -31,16 +29,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
-
-// 1. FIX HILT IMPORT
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-
-// 2. TEMPORARY FIX FOR RES (Comment these out if they are red)
-// import org.meshtastic.core.strings.Res
-// import org.meshtastic.core.strings.map
-// import org.jetbrains.compose.resources.stringResource
-
+import org.jetbrains.compose.resources.stringResource
+import org.meshtastic.core.strings.Res
+import org.meshtastic.core.strings.map
 import org.meshtastic.core.ui.component.MainAppBar
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.overlay.Polygon
@@ -51,21 +44,22 @@ fun MapScreen(
     onClickNodeChip: (Int) -> Unit,
     navigateToNodeDetails: (Int) -> Unit,
     modifier: Modifier = Modifier,
-    // FIX: This should work now with the import above
     mapViewModel: MapViewModel = hiltViewModel(),
 ) {
     val ourNodeInfo by mapViewModel.ourNodeInfo.collectAsStateWithLifecycle()
     val isConnected by mapViewModel.isConnected.collectAsStateWithLifecycle()
     val nodes by mapViewModel.nodesWithPosition.collectAsStateWithLifecycle()
+    val localZones by mapViewModel.localZones.collectAsStateWithLifecycle()
     val networkZones by mapViewModel.incomingZones.collectAsStateWithLifecycle()
 
     var isDrawingMode by remember { mutableStateOf(false) }
     var isDeleteMode by remember { mutableStateOf(false) }
+
+    // FIX: Default to 0. Never auto-move on load.
     var triggerCenterLocation by remember { mutableStateOf(0) }
+
     var hasLocationPermission by remember { mutableStateOf(false) }
 
-    // Use the MapZone defined in MapViewModel.kt
-    val zones = remember { mutableStateListOf<MapZone>() }
     var showColorDialog by remember { mutableStateOf(false) }
     var tempCenter by remember { mutableStateOf<GeoPoint?>(null) }
     var tempRadius by remember { mutableStateOf(0f) }
@@ -87,7 +81,7 @@ fun MapScreen(
         modifier = modifier,
         topBar = {
             MainAppBar(
-                title = "Map",
+                title = stringResource(Res.string.map),
                 ourNode = ourNodeInfo,
                 showNodeChip = ourNodeInfo != null && isConnected,
                 canNavigateUp = false,
@@ -100,6 +94,7 @@ fun MapScreen(
             Column(horizontalAlignment = Alignment.End) {
                 FloatingActionButton(
                     onClick = {
+                        // FIX: Only move map when user CLICKS this button
                         if (hasLocationPermission) triggerCenterLocation++
                         else permissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION))
                     },
@@ -131,11 +126,20 @@ fun MapScreen(
             MapView(
                 isDrawingMode = isDrawingMode,
                 isDeleteMode = isDeleteMode,
-                zones = zones,
-                networkZones = networkZones, // Passing network zones
+                zones = localZones,
+                networkZones = networkZones,
                 nodes = nodes,
                 triggerCenterLocation = triggerCenterLocation,
                 hasLocationPermission = hasLocationPermission,
+
+                // --- PASS SAVED STATE (Static) ---
+                initialCenter = mapViewModel.getSavedCenter(),
+                initialZoom = mapViewModel.getSavedZoom(),
+                onMapMoved = { center, zoom ->
+                    mapViewModel.saveMapState(center, zoom)
+                },
+                // ---------------------------------
+
                 onCircleFinished = { center, radius ->
                     tempCenter = center
                     tempRadius = radius
@@ -156,16 +160,9 @@ fun MapScreen(
                 Column {
                     val addZone = { color: Int ->
                         val circlePoints = Polygon.pointsAsCircle(tempCenter, tempRadius.toDouble())
-                        zones.add(MapZone(UUID.randomUUID().toString(), tempCenter!!, tempRadius, color, circlePoints))
-
-                        // Broadcast the zone
-                        mapViewModel.sendZone(
-                            tempCenter!!.latitude,
-                            tempCenter!!.longitude,
-                            tempRadius,
-                            color
-                        )
-
+                        val newZone = MapZone(UUID.randomUUID().toString(), tempCenter!!, tempRadius, color, circlePoints)
+                        mapViewModel.addLocalZone(newZone)
+                        mapViewModel.sendZone(tempCenter!!.latitude, tempCenter!!.longitude, tempRadius, color)
                         showColorDialog = false
                         isDrawingMode = false
                     }
@@ -194,7 +191,7 @@ fun MapScreen(
             text = { Text("Are you sure you want to delete this zone?") },
             confirmButton = {
                 Button(onClick = {
-                    zones.remove(showDeleteConfirmDialog)
+                    mapViewModel.removeLocalZone(showDeleteConfirmDialog!!)
                     showDeleteConfirmDialog = null
                 }) { Text("Yes, Delete") }
             },

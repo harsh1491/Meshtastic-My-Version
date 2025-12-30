@@ -34,7 +34,7 @@ dependencies {
     implementation(projects.core.prefs)
     implementation(projects.core.proto)
     implementation(projects.core.service)
-    implementation(projects.core.strings)
+
     implementation(projects.core.ui)
 
     implementation(libs.accompanist.permissions)
@@ -52,6 +52,8 @@ dependencies {
     implementation(libs.osmbonuspack)
     implementation(libs.osmdroid.android)
     implementation(libs.timber)
+
+    implementation(projects.core.strings)
 
     implementation("androidx.hilt:hilt-navigation-compose:1.2.0")
 
