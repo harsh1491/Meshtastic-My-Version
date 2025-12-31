@@ -54,10 +54,7 @@ fun MapScreen(
 
     var isDrawingMode by remember { mutableStateOf(false) }
     var isDeleteMode by remember { mutableStateOf(false) }
-
-    // FIX: Default to 0. Never auto-move on load.
     var triggerCenterLocation by remember { mutableStateOf(0) }
-
     var hasLocationPermission by remember { mutableStateOf(false) }
 
     var showColorDialog by remember { mutableStateOf(false) }
@@ -94,7 +91,6 @@ fun MapScreen(
             Column(horizontalAlignment = Alignment.End) {
                 FloatingActionButton(
                     onClick = {
-                        // FIX: Only move map when user CLICKS this button
                         if (hasLocationPermission) triggerCenterLocation++
                         else permissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION))
                     },
@@ -131,15 +127,11 @@ fun MapScreen(
                 nodes = nodes,
                 triggerCenterLocation = triggerCenterLocation,
                 hasLocationPermission = hasLocationPermission,
-
-                // --- PASS SAVED STATE (Static) ---
                 initialCenter = mapViewModel.getSavedCenter(),
                 initialZoom = mapViewModel.getSavedZoom(),
                 onMapMoved = { center, zoom ->
                     mapViewModel.saveMapState(center, zoom)
                 },
-                // ---------------------------------
-
                 onCircleFinished = { center, radius ->
                     tempCenter = center
                     tempRadius = radius
@@ -160,9 +152,13 @@ fun MapScreen(
                 Column {
                     val addZone = { color: Int ->
                         val circlePoints = Polygon.pointsAsCircle(tempCenter, tempRadius.toDouble())
+                        // Create ID here
                         val newZone = MapZone(UUID.randomUUID().toString(), tempCenter!!, tempRadius, color, circlePoints)
+
                         mapViewModel.addLocalZone(newZone)
-                        mapViewModel.sendZone(tempCenter!!.latitude, tempCenter!!.longitude, tempRadius, color)
+                        // Send the FULL zone (ID included)
+                        mapViewModel.sendZone(newZone, color)
+
                         showColorDialog = false
                         isDrawingMode = false
                     }
@@ -188,10 +184,17 @@ fun MapScreen(
         AlertDialog(
             onDismissRequest = { showDeleteConfirmDialog = null },
             title = { Text("Delete Zone") },
-            text = { Text("Are you sure you want to delete this zone?") },
+            text = { Text("Are you sure you want to delete this zone? It will be removed for everyone.") },
             confirmButton = {
                 Button(onClick = {
-                    mapViewModel.removeLocalZone(showDeleteConfirmDialog!!)
+                    val zone = showDeleteConfirmDialog!!
+
+                    // 1. Delete Locally
+                    mapViewModel.removeLocalZone(zone)
+
+                    // 2. Send Delete Command to Network
+                    mapViewModel.sendDeleteZone(zone.id)
+
                     showDeleteConfirmDialog = null
                 }) { Text("Yes, Delete") }
             },

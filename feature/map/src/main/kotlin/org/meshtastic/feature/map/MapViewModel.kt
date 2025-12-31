@@ -36,16 +36,11 @@ class MapViewModel @Inject constructor(
     private val serviceRepository: ServiceRepository
 ) : ViewModel() {
 
-    // --- STATIC MEMORY (Survives Tab Switching) ---
     companion object {
-        // These live as long as the App is open. They never die on navigation.
         private val _staticLocalZones = MutableStateFlow<List<MapZone>>(emptyList())
-
-        // We also save the camera statically so it doesn't reset if VM dies
         var staticCenter: GeoPoint? = null
         var staticZoom: Double = 15.0
     }
-    // ----------------------------------------------
 
     val ourNodeInfo: StateFlow<Node?> = nodeRepository.ourNodeInfo
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
@@ -65,7 +60,6 @@ class MapViewModel @Inject constructor(
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    // Use the STATIC list for zones
     val localZones = _staticLocalZones.asStateFlow()
 
     private val _incomingZones = MutableStateFlow<List<MapZone>>(emptyList())
@@ -77,7 +71,15 @@ class MapViewModel @Inject constructor(
                 try {
                     if (packet.decoded.portnum.number == Portnums.PortNum.TEXT_MESSAGE_APP_VALUE) {
                         val text = packet.decoded.payload.toStringUtf8()
-                        if (text.startsWith("ZONE|")) parseAndAddZone(text)
+
+                        // 1. Handle Creation
+                        if (text.startsWith("ZONE|")) {
+                            parseAndAddZone(text)
+                        }
+                        // 2. Handle Deletion
+                        else if (text.startsWith("DELZONE|")) {
+                            parseAndRemoveZone(text)
+                        }
                     }
                 } catch (e: Exception) { }
             }
@@ -91,7 +93,6 @@ class MapViewModel @Inject constructor(
         staticZoom = zoom
     }
 
-    // Helper to get saved state for the UI
     fun getSavedCenter(): GeoPoint? = staticCenter
     fun getSavedZoom(): Double = staticZoom
 
@@ -107,30 +108,59 @@ class MapViewModel @Inject constructor(
         _staticLocalZones.value = current
     }
 
+    // --- Message Parsing ---
+
     private fun parseAndAddZone(text: String) {
         try {
             val parts = text.split("|")
-            if (parts.size >= 5) {
-                val lat = parts[1].toDouble()
-                val lon = parts[2].toDouble()
-                val rad = parts[3].toFloat()
-                val type = parts[4].toInt()
+            // New Format: ZONE | ID | lat | lon | rad | type
+            if (parts.size >= 6) {
+                val id = parts[1] // Use the ID sent by the other phone
+                val lat = parts[2].toDouble()
+                val lon = parts[3].toDouble()
+                val rad = parts[4].toFloat()
+                val type = parts[5].toInt()
+
                 val color = when (type) {
                     1 -> android.graphics.Color.argb(100, 255, 0, 0)
                     2 -> android.graphics.Color.argb(100, 255, 255, 0)
                     else -> android.graphics.Color.argb(100, 0, 255, 0)
                 }
+
                 val center = GeoPoint(lat, lon)
                 val points = Polygon.pointsAsCircle(center, rad.toDouble())
-                val newZone = MapZone(UUID.randomUUID().toString(), center, rad, color, points)
+                val newZone = MapZone(id, center, rad, color, points)
+
+                // Update List
                 val currentList = _incomingZones.value.toMutableList()
+                // Prevent duplicates if radio sends same packet twice
+                currentList.removeAll { it.id == id }
                 currentList.add(newZone)
                 _incomingZones.value = currentList
             }
         } catch (e: Exception) { }
     }
 
-    fun sendZone(centerLat: Double, centerLon: Double, radius: Float, colorInt: Int) {
+    private fun parseAndRemoveZone(text: String) {
+        try {
+            // Format: DELZONE | ID
+            val parts = text.split("|")
+            if (parts.size >= 2) {
+                val idToDelete = parts[1]
+
+                val currentList = _incomingZones.value.toMutableList()
+                val wasRemoved = currentList.removeAll { it.id == idToDelete }
+
+                if (wasRemoved) {
+                    _incomingZones.value = currentList
+                }
+            }
+        } catch (e: Exception) { }
+    }
+
+    // --- Sending Commands ---
+
+    fun sendZone(zone: MapZone, colorInt: Int) {
         viewModelScope.launch(Dispatchers.IO) {
             val service = serviceRepository.meshService ?: return@launch
             if (ourNodeInfo.value == null) return@launch
@@ -140,7 +170,20 @@ class MapViewModel @Inject constructor(
                 android.graphics.Color.argb(100, 255, 255, 0) -> 2
                 else -> 3
             }
-            val message = "ZONE|$centerLat|$centerLon|${radius.toInt()}|$type"
+
+            // NEW FORMAT: Includes ID
+            val message = "ZONE|${zone.id}|${zone.center.latitude}|${zone.center.longitude}|${zone.radius.toInt()}|$type"
+            val packet = DataPacket(to = "^all", channel = 0, text = message)
+            try { service.send(packet) } catch (e: Exception) { e.printStackTrace() }
+        }
+    }
+
+    fun sendDeleteZone(zoneId: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val service = serviceRepository.meshService ?: return@launch
+
+            // NEW COMMAND: Delete this specific ID
+            val message = "DELZONE|$zoneId"
             val packet = DataPacket(to = "^all", channel = 0, text = message)
             try { service.send(packet) } catch (e: Exception) { e.printStackTrace() }
         }
