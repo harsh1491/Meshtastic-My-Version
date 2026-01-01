@@ -17,6 +17,8 @@
 
 package org.meshtastic.feature.settings.radio.component
 
+import org.meshtastic.core.ui.ModelNameHelper
+
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.CardDefaults
@@ -104,7 +106,8 @@ fun UserConfigScreen(viewModel: RadioConfigViewModel = hiltViewModel(), onBack: 
                 HorizontalDivider()
                 RegularPreference(
                     title = stringResource(Res.string.hardware_model),
-                    subtitle = formState.value.hwModel.name,
+                    // We wrap it with our helper here:
+                    subtitle = ModelNameHelper.getFriendlyName(formState.value.hwModel.name),
                     onClick = {},
                 )
                 HorizontalDivider()

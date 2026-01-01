@@ -17,6 +17,8 @@
 
 package org.meshtastic.feature.node.component
 
+import org.meshtastic.core.ui.ModelNameHelper
+
 import android.content.res.Configuration
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
@@ -213,7 +215,7 @@ fun NodeItem(
                     } else {
                         MaterialTheme.typography.labelSmall
                     }
-                Text(text = thatNode.user.hwModel.name, style = labelStyle)
+                Text(text = ModelNameHelper.getFriendlyName(thatNode.user.hwModel.name), style = labelStyle)
                 Text(text = thatNode.user.role.name, style = labelStyle)
                 Text(text = thatNode.user.id.ifEmpty { "???" }, style = labelStyle)
             }
