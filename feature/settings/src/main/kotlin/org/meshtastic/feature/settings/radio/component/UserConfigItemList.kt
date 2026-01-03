@@ -51,6 +51,23 @@ import org.meshtastic.core.ui.component.TitledCard
 import org.meshtastic.feature.settings.radio.RadioConfigViewModel
 import org.meshtastic.proto.copy
 
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import org.meshtastic.core.ui.TacticalIconManager // Your new Manager
+import org.meshtastic.proto.copy // To update the config
+
 @Composable
 fun UserConfigScreen(viewModel: RadioConfigViewModel = hiltViewModel(), onBack: () -> Unit) {
     val state by viewModel.radioConfigState.collectAsStateWithLifecycle()
@@ -110,6 +127,59 @@ fun UserConfigScreen(viewModel: RadioConfigViewModel = hiltViewModel(), onBack: 
                     subtitle = ModelNameHelper.getFriendlyName(formState.value.hwModel.name),
                     onClick = {},
                 )
+
+                // --- NEW UNIT SELECTOR ---
+                val showUnitDialog = remember { mutableStateOf(false) }
+
+                // 1. Calculate current type based on the Long Name
+                val currentType = TacticalIconManager.getTypeFromName(formState.value.longName)
+
+                RegularPreference(
+                    title = "Unit Type", // Label
+                    subtitle = currentType.name, // Shows "SOLDIER", "TANK", etc.
+                    onClick = { showUnitDialog.value = true },
+                )
+                HorizontalDivider()
+
+                if (showUnitDialog.value) {
+                    AlertDialog(
+                        onDismissRequest = { showUnitDialog.value = false },
+                        title = { Text("Select Unit Marker") },
+                        text = {
+                            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                                TacticalIconManager.UnitType.values().forEach { type ->
+                                    Text(
+                                        text = "${TacticalIconManager.getEmojiForType(type)} ${type.name}",
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable {
+                                                // 1. Get the Clean Name (Remove old emojis)
+                                                val cleanName = TacticalIconManager.getCleanName(formState.value.longName)
+
+                                                // 2. Get the New Emoji
+                                                val newEmoji = TacticalIconManager.getEmojiForType(type)
+
+                                                // 3. Combine them: "Commander" + " " + "🛡️"
+                                                val newLongName = "$cleanName $newEmoji".trim()
+
+                                                // 4. Save to Form State
+                                                formState.value = formState.value.copy { longName = newLongName }
+
+                                                showUnitDialog.value = false
+                                            }
+                                            .padding(16.dp)
+                                    )
+                                }
+                            }
+                        },
+                        confirmButton = {
+                            TextButton(onClick = { showUnitDialog.value = false }) { Text("Cancel") }
+                        }
+                    )
+                }
+                // -------------------------
+
+
                 HorizontalDivider()
                 SwitchPreference(
                     title = stringResource(Res.string.unmessageable),

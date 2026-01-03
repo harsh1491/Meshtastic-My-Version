@@ -78,7 +78,7 @@ class MeshServiceNotificationsImpl @Inject constructor(@ApplicationContext priva
     companion object {
         private const val FIFTEEN_MINUTES_IN_MILLIS = 15L * 60 * 1000
         const val MAX_BATTERY_LEVEL = 100
-        private val NOTIFICATION_LIGHT_COLOR = Color.BLUE
+        private val NOTIFICATION_LIGHT_COLOR = Color.parseColor("#800080")
     }
 
     /**
@@ -469,7 +469,7 @@ class MeshServiceNotificationsImpl @Inject constructor(@ApplicationContext priva
         type: NotificationType,
         contentIntent: PendingIntent? = null,
     ): NotificationCompat.Builder {
-        val smallIcon = com.geeksville.mesh.R.drawable.app_icon
+        val smallIcon = com.geeksville.mesh.R.drawable.notification_logo
 
         return NotificationCompat.Builder(context, type.channelId)
             .setSmallIcon(smallIcon)
