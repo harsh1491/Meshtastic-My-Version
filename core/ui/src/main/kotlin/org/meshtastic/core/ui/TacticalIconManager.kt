@@ -17,6 +17,9 @@ object TacticalIconManager {
     private const val CODE_HELI = "🚁"
     private const val CODE_DRONE = "✈️"
 
+    // Stores the user's choice temporarily so the Map updates INSTANTLY
+    var myCurrentEmoji: String? = null
+
     // --- The Marker Logic ---
 
     /**

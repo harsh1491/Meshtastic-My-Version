@@ -59,21 +59,26 @@ fun MapView(
 
     // --- ICONS CONFIGURATION ---
 
-    // 1. My Icon: Find "Me" by looking for the node with 0 hops
-    val myIconBitmap = remember(nodes) {
-        // Since you are testing alone, we look for the node that has one of our tactical emojis.
-        // This acts as a "Name Match" to find yourself.
-        val myNode = nodes.find {
-            val name = it.user.longName
-            name.contains("🛡️") || name.contains("🚁") || name.contains("✈️")
+    // 1. My Icon: Use the "Memory Trick" for instant updates
+    val myIconBitmap = remember(nodes) { // Triggers when list updates
+        // 1. Check if we just selected something in Settings (Instant Feedback)
+        var myEmoji = TacticalIconManager.myCurrentEmoji
+
+        // 2. If memory is empty (app restart), try to find "Me" in the list by looking for any emoji
+        if (myEmoji == null) {
+            val myNode = nodes.find {
+                val name = it.user.longName
+                name.contains("🛡️") || name.contains("🚁") || name.contains("✈️")
+            }
+            if (myNode != null) {
+                // Extract the emoji from the name in the database
+                myEmoji = TacticalIconManager.getEmojiForType(TacticalIconManager.getTypeFromName(myNode.user.longName))
+            }
         }
 
-        // If we found a node with an emoji, use its icon. Otherwise, default to Soldier.
-        val myName = myNode?.user?.longName
-        val myIconId = TacticalIconManager.getMarkerDrawable(myName)
-
-        // Debug: If you still see a Soldier, you can uncomment the line below to FORCE a Tank:
-        // val myIconId = org.meshtastic.core.ui.R.drawable.marker_tank
+        // 3. Convert that Emoji to a Drawable ID (Tank/Heli/Soldier)
+        // We construct a fake name just to use our existing logic
+        val myIconId = TacticalIconManager.getMarkerDrawable("Placeholder $myEmoji")
 
         createMarkerBitmap(context, myIconId, null)
     }

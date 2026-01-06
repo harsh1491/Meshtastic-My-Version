@@ -162,6 +162,9 @@ fun UserConfigScreen(viewModel: RadioConfigViewModel = hiltViewModel(), onBack: 
                                                 // 3. Combine them: "Commander" + " " + "🛡️"
                                                 val newLongName = "$cleanName $newEmoji".trim()
 
+                                                // Tell the Manager: "This is me! Remember this icon!"
+                                                TacticalIconManager.myCurrentEmoji = newEmoji
+
                                                 // 4. Save to Form State
                                                 formState.value = formState.value.copy { longName = newLongName }
 
