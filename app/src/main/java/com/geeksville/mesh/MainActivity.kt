@@ -59,48 +59,53 @@ import javax.inject.Inject
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
+import android.location.Location
+import android.location.LocationListener // NEW IMPORT
 import android.location.LocationManager
 import android.os.Handler
 import android.os.Looper
 import androidx.core.app.ActivityCompat
-import org.meshtastic.core.model.DataPacket // Crucial for sending
+import kotlinx.coroutines.Dispatchers // NEW IMPORT
+import org.meshtastic.core.model.DataPacket
 
 @AndroidEntryPoint
 class MainActivity : AppCompatActivity() {
     private val model: UIViewModel by viewModels()
 
-    // This is aware of the Activity lifecycle and handles binding to the mesh service.
     @Inject internal lateinit var meshServiceClient: MeshServiceClient
-
     @Inject internal lateinit var uiPreferencesDataSource: UiPreferencesDataSource
 
+    // =========================================================================
+    // NEW CODE: Live Location Variables
+    // =========================================================================
+    // 1. Store the latest FRESH location here
+    private var currentLocation: Location? = null
 
-    // =========================================================================
-    // NEW CODE: Location Hack Variables
-    // =========================================================================
+    // 2. Define the Listener to update that variable
+    private val locationListener = LocationListener { location ->
+        currentLocation = location
+        // Timber.d("LocationHack: GPS Update Received -> ${location.latitude}, ${location.longitude}")
+    }
+
     private val locationHandler = Handler(Looper.getMainLooper())
     private val locationRunnable = object : Runnable {
         override fun run() {
-            // FIX: Launch in a background thread (IO) so the UI doesn't freeze
-            lifecycleScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            // Run in background to avoid blocking UI
+            lifecycleScope.launch(Dispatchers.IO) {
                 sendCustomLocation()
             }
-
             // Repeat every 30 seconds
             locationHandler.postDelayed(this, 30000)
         }
     }
     // =========================================================================
 
-
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
         enableEdgeToEdge(
-            // Disable three-button navbar scrim on pre-Q devices
             navigationBarStyle = SystemBarStyle.auto(Color.TRANSPARENT, Color.TRANSPARENT),
         )
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            // Disable three-button navbar scrim
             window.setNavigationBarContrastEnforced(false)
         }
 
@@ -139,23 +144,44 @@ class MainActivity : AppCompatActivity() {
         handleIntent(intent)
     }
 
-
     // =========================================================================
-    // NEW CODE: Lifecycle Methods to Start/Stop the Loop
+    // NEW CODE: Lifecycle Methods
     // =========================================================================
     override fun onResume() {
         super.onResume()
-        // Start sending location when app opens
-        locationHandler.post(locationRunnable)
+        startLocationUpdates() // Start listening for GPS changes
+        locationHandler.post(locationRunnable) // Start the 30s sending timer
     }
 
     override fun onPause() {
         super.onPause()
-        // Stop sending when app is minimized to save battery/network
+        stopLocationUpdates() // Stop listening to save battery
         locationHandler.removeCallbacks(locationRunnable)
     }
-    // =========================================================================
 
+    private fun startLocationUpdates() {
+        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            return
+        }
+        val locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
+
+        try {
+            // Request updates every 5 seconds or 5 meters
+            // This forces the GPS chip to wake up and give us fresh data
+            locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 5000L, 5f, locationListener)
+
+            // Also try Network provider as backup
+            locationManager.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 5000L, 5f, locationListener)
+        } catch (e: Exception) {
+            Timber.e(e, "LocationHack: Failed to request updates")
+        }
+    }
+
+    private fun stopLocationUpdates() {
+        val locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
+        locationManager.removeUpdates(locationListener)
+    }
+    // =========================================================================
 
     private fun handleIntent(intent: Intent) {
         val appLinkAction = intent.action
@@ -237,42 +263,30 @@ class MainActivity : AppCompatActivity() {
         createSettingsIntent().send()
     }
 
-
     // =========================================================================
-    // NEW CODE: The Location Sender Logic
+    // NEW CODE: The Sender Logic (Using Fresh Variable)
     // =========================================================================
     private fun sendCustomLocation() {
         try {
-            // 1. SAFETY: Check if radio is actually connected
             val isConnected = try {
                 meshServiceClient.service?.connectionState() != "DISCONNECTED"
             } catch (e: Exception) { false }
 
             if (!isConnected) return
 
-            // 2. PERMISSION: Check if we are allowed to read GPS
-            if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-                // If no permission, we simply do nothing. The Map Screen handles requesting it.
-                return
-            }
-
-            // 3. GET LOCATION: Try GPS first, fall back to Network
-            val locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
-            val loc = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER)
-                ?: locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
+            // USE THE LIVE VARIABLE INSTEAD OF getLastKnownLocation
+            val loc = currentLocation
 
             if (loc != null) {
-                // 4. FORMAT: "TRK|LAT|LON"
+                // Format: "TRK|LAT|LON"
                 val payloadStr = "TRK|${"%.5f".format(loc.latitude)}|${"%.5f".format(loc.longitude)}"
                 val payloadBytes = payloadStr.toByteArray()
 
-                // 5. SEND: Create Packet (DataType 1 = Text)
-                // Using the constructor: DataPacket(to, bytes, dataType) OR DataPacket(to, channel, bytes, dataType)
-                // We use Channel 0 (Primary)
+                // Send to "^all" (Broadcast)
                 val packet = DataPacket(
-                    "^all", // Send to everyone
+                    "^all",
                     payloadBytes,
-                    1 // DataType 1 = CLEAR_TEXT / TEXT_MESSAGE_APP
+                    1 // DataType 1 = TEXT_MESSAGE_APP
                 )
 
                 meshServiceClient.service?.send(packet)
@@ -282,6 +296,4 @@ class MainActivity : AppCompatActivity() {
             Timber.e(e, "LocationHack: Failed to send")
         }
     }
-
-
 }
