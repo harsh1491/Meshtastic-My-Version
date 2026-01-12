@@ -56,6 +56,15 @@ import org.meshtastic.feature.intro.AppIntroductionScreen
 import timber.log.Timber
 import javax.inject.Inject
 
+import android.Manifest
+import android.content.Context
+import android.content.pm.PackageManager
+import android.location.LocationManager
+import android.os.Handler
+import android.os.Looper
+import androidx.core.app.ActivityCompat
+import org.meshtastic.core.model.DataPacket // Crucial for sending
+
 @AndroidEntryPoint
 class MainActivity : AppCompatActivity() {
     private val model: UIViewModel by viewModels()
@@ -64,6 +73,25 @@ class MainActivity : AppCompatActivity() {
     @Inject internal lateinit var meshServiceClient: MeshServiceClient
 
     @Inject internal lateinit var uiPreferencesDataSource: UiPreferencesDataSource
+
+
+    // =========================================================================
+    // NEW CODE: Location Hack Variables
+    // =========================================================================
+    private val locationHandler = Handler(Looper.getMainLooper())
+    private val locationRunnable = object : Runnable {
+        override fun run() {
+            // FIX: Launch in a background thread (IO) so the UI doesn't freeze
+            lifecycleScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                sendCustomLocation()
+            }
+
+            // Repeat every 30 seconds
+            locationHandler.postDelayed(this, 30000)
+        }
+    }
+    // =========================================================================
+
 
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
@@ -110,6 +138,24 @@ class MainActivity : AppCompatActivity() {
         super.onNewIntent(intent)
         handleIntent(intent)
     }
+
+
+    // =========================================================================
+    // NEW CODE: Lifecycle Methods to Start/Stop the Loop
+    // =========================================================================
+    override fun onResume() {
+        super.onResume()
+        // Start sending location when app opens
+        locationHandler.post(locationRunnable)
+    }
+
+    override fun onPause() {
+        super.onPause()
+        // Stop sending when app is minimized to save battery/network
+        locationHandler.removeCallbacks(locationRunnable)
+    }
+    // =========================================================================
+
 
     private fun handleIntent(intent: Intent) {
         val appLinkAction = intent.action
@@ -190,4 +236,52 @@ class MainActivity : AppCompatActivity() {
     private fun showSettingsPage() {
         createSettingsIntent().send()
     }
+
+
+    // =========================================================================
+    // NEW CODE: The Location Sender Logic
+    // =========================================================================
+    private fun sendCustomLocation() {
+        try {
+            // 1. SAFETY: Check if radio is actually connected
+            val isConnected = try {
+                meshServiceClient.service?.connectionState() != "DISCONNECTED"
+            } catch (e: Exception) { false }
+
+            if (!isConnected) return
+
+            // 2. PERMISSION: Check if we are allowed to read GPS
+            if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+                // If no permission, we simply do nothing. The Map Screen handles requesting it.
+                return
+            }
+
+            // 3. GET LOCATION: Try GPS first, fall back to Network
+            val locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
+            val loc = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER)
+                ?: locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
+
+            if (loc != null) {
+                // 4. FORMAT: "TRK|LAT|LON"
+                val payloadStr = "TRK|${"%.5f".format(loc.latitude)}|${"%.5f".format(loc.longitude)}"
+                val payloadBytes = payloadStr.toByteArray()
+
+                // 5. SEND: Create Packet (DataType 1 = Text)
+                // Using the constructor: DataPacket(to, bytes, dataType) OR DataPacket(to, channel, bytes, dataType)
+                // We use Channel 0 (Primary)
+                val packet = DataPacket(
+                    "broadcast", // Send to everyone
+                    payloadBytes,
+                    1 // DataType 1 = CLEAR_TEXT / TEXT_MESSAGE_APP
+                )
+
+                meshServiceClient.service?.send(packet)
+                Timber.d("LocationHack: Sent -> $payloadStr")
+            }
+        } catch (e: Exception) {
+            Timber.e(e, "LocationHack: Failed to send")
+        }
+    }
+
+
 }
