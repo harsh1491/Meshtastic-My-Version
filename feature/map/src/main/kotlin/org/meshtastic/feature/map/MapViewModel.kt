@@ -37,7 +37,13 @@ class MapViewModel @Inject constructor(
 ) : ViewModel() {
 
     companion object {
+        // 1. EXISTING: Local zones (created by me)
         private val _staticLocalZones = MutableStateFlow<List<MapZone>>(emptyList())
+
+        // 2. NEW CHANGE: Move Incoming Zones here too!
+        // This makes them static, so they survive screen rotation and tab switching.
+        private val _staticIncomingZones = MutableStateFlow<List<MapZone>>(emptyList())
+
         var staticCenter: GeoPoint? = null
         var staticZoom: Double = 15.0
     }
@@ -63,7 +69,8 @@ class MapViewModel @Inject constructor(
     val localZones = _staticLocalZones.asStateFlow()
 
     private val _incomingZones = MutableStateFlow<List<MapZone>>(emptyList())
-    val incomingZones = _incomingZones.asStateFlow()
+    // 3. UPDATE THIS LINE: Link to the static variable
+    val incomingZones = _staticIncomingZones.asStateFlow()
 
     init {
         viewModelScope.launch(Dispatchers.IO) {
@@ -132,11 +139,13 @@ class MapViewModel @Inject constructor(
                 val newZone = MapZone(id, center, rad, color, points)
 
                 // Update List
-                val currentList = _incomingZones.value.toMutableList()
+                // 4. UPDATE THIS BLOCK: Use the STATIC variable
+                val currentList = _staticIncomingZones.value.toMutableList()
                 // Prevent duplicates if radio sends same packet twice
                 currentList.removeAll { it.id == id }
                 currentList.add(newZone)
-                _incomingZones.value = currentList
+
+                _staticIncomingZones.value = currentList
             }
         } catch (e: Exception) { }
     }
@@ -148,11 +157,11 @@ class MapViewModel @Inject constructor(
             if (parts.size >= 2) {
                 val idToDelete = parts[1]
 
-                val currentList = _incomingZones.value.toMutableList()
+                val currentList = _staticIncomingZones.value.toMutableList()
                 val wasRemoved = currentList.removeAll { it.id == idToDelete }
 
                 if (wasRemoved) {
-                    _incomingZones.value = currentList
+                    _staticIncomingZones.value = currentList
                 }
             }
         } catch (e: Exception) { }
