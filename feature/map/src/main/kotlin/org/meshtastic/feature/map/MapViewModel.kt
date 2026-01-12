@@ -22,6 +22,11 @@ import org.osmdroid.views.overlay.Polygon
 import java.util.UUID
 import javax.inject.Inject
 
+import kotlinx.coroutines.flow.combine
+
+import org.meshtastic.proto.MeshProtos
+import kotlinx.coroutines.flow.combine // Fixes the combine function
+
 data class MapZone(
     val id: String,
     val center: GeoPoint,
@@ -44,6 +49,9 @@ class MapViewModel @Inject constructor(
         // This makes them static, so they survive screen rotation and tab switching.
         private val _staticIncomingZones = MutableStateFlow<List<MapZone>>(emptyList())
 
+        // 1. NEW: Store the "Text Hack" locations here (NodeID -> Position)
+        private val _staticLocationOverrides = MutableStateFlow<Map<Int, GeoPoint>>(emptyMap())
+
         var staticCenter: GeoPoint? = null
         var staticZoom: Double = 15.0
     }
@@ -54,17 +62,36 @@ class MapViewModel @Inject constructor(
     val isConnected: StateFlow<Boolean> = flowOf(true)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
 
-    val nodesWithPosition: StateFlow<List<Node>> = nodeRepository.nodeDBbyNum
-        .map { nodeMap ->
-            nodeMap.values.filter { node ->
-                val lat = node.position?.latitudeI ?: 0
-                val lon = node.position?.longitudeI ?: 0
-                val hasPosition = lat != 0 && lon != 0
-                val isNotMe = node.num != (ourNodeInfo.value?.num ?: 0)
-                hasPosition && isNotMe
+    // 2. UPDATED: Merge Database Nodes with our Text Overrides
+    val nodesWithPosition: StateFlow<List<Node>> = combine(
+        nodeRepository.nodeDBbyNum,
+        _staticLocationOverrides
+    ) { nodeMap, overrides ->
+        nodeMap.values.map { node ->
+            val overridePos = overrides[node.num]
+
+            // LOG 3: Check if we found a match
+            if (overridePos != null) {
+                timber.log.Timber.e("DEBUG_TRK: MATCH FOUND for node ${node.num}! Moving to ${overridePos.latitude}")
+
+                val newPos = MeshProtos.Position.newBuilder()
+                    .setLatitudeI((overridePos.latitude * 1e7).toInt())
+                    .setLongitudeI((overridePos.longitude * 1e7).toInt())
+                    .build()
+
+                node.copy(position = newPos)
+            } else {
+                // timber.log.Timber.e("DEBUG_TRK: No override for node ${node.num}")
+                node
             }
+        }.filter { node ->
+            val lat = node.position?.latitudeI ?: 0
+            val lon = node.position?.longitudeI ?: 0
+            val hasPosition = lat != 0 && lon != 0
+            val isNotMe = node.num != (ourNodeInfo.value?.num ?: 0)
+            hasPosition && isNotMe
         }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val localZones = _staticLocalZones.asStateFlow()
 
@@ -79,13 +106,16 @@ class MapViewModel @Inject constructor(
                     if (packet.decoded.portnum.number == Portnums.PortNum.TEXT_MESSAGE_APP_VALUE) {
                         val text = packet.decoded.payload.toStringUtf8()
 
-                        // 1. Handle Creation
+                        // 1. Zones
                         if (text.startsWith("ZONE|")) {
                             parseAndAddZone(text)
                         }
-                        // 2. Handle Deletion
                         else if (text.startsWith("DELZONE|")) {
                             parseAndRemoveZone(text)
+                        }
+                        // 3. NEW: Handle Location Text Hack
+                        else if (text.startsWith("TRK|")) {
+                            parseAndMoveNode(packet.from, text) // Pass Sender ID and Text
                         }
                     }
                 } catch (e: Exception) { }
@@ -165,6 +195,34 @@ class MapViewModel @Inject constructor(
                 }
             }
         } catch (e: Exception) { }
+    }
+
+
+
+    private fun parseAndMoveNode(senderId: Int, text: String) {
+        try {
+            // LOG 1: Did we even catch the message?
+            timber.log.Timber.e("DEBUG_TRK: Packet received from ID: $senderId. Text: $text")
+
+            val parts = text.split("|")
+            if (parts.size >= 3) {
+                val lat = parts[1].toDouble()
+                val lon = parts[2].toDouble()
+
+                val newPoint = GeoPoint(lat, lon)
+
+                val currentMap = _staticLocationOverrides.value.toMutableMap()
+                currentMap[senderId] = newPoint
+                _staticLocationOverrides.value = currentMap
+
+                // LOG 2: Did we save it to the map?
+                timber.log.Timber.e("DEBUG_TRK: SAVED override for ID $senderId at $lat, $lon")
+            } else {
+                timber.log.Timber.e("DEBUG_TRK: Parsing Failed. Not enough parts.")
+            }
+        } catch (e: Exception) {
+            timber.log.Timber.e("DEBUG_TRK: Error - ${e.message}")
+        }
     }
 
     // --- Sending Commands ---

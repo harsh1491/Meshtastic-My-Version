@@ -270,7 +270,7 @@ class MainActivity : AppCompatActivity() {
                 // Using the constructor: DataPacket(to, bytes, dataType) OR DataPacket(to, channel, bytes, dataType)
                 // We use Channel 0 (Primary)
                 val packet = DataPacket(
-                    "broadcast", // Send to everyone
+                    "^all", // Send to everyone
                     payloadBytes,
                     1 // DataType 1 = CLEAR_TEXT / TEXT_MESSAGE_APP
                 )
