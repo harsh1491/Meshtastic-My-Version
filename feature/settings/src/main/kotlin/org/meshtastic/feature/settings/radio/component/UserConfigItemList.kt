@@ -65,8 +65,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import org.meshtastic.core.ui.TacticalIconManager // Your new Manager
-import org.meshtastic.proto.copy // To update the config
+import org.meshtastic.core.ui.TacticalIconManager
+import org.meshtastic.proto.copy
 
 @Composable
 fun UserConfigScreen(viewModel: RadioConfigViewModel = hiltViewModel(), onBack: () -> Unit) {
@@ -100,11 +100,11 @@ fun UserConfigScreen(viewModel: RadioConfigViewModel = hiltViewModel(), onBack: 
                 EditTextPreference(
                     title = stringResource(Res.string.long_name),
                     value = formState.value.longName,
-                    maxSize = 39, // long_name max_size:40
+                    maxSize = 39,
                     enabled = state.connected,
                     isError = !validLongName,
                     keyboardOptions =
-                    KeyboardOptions.Default.copy(keyboardType = KeyboardType.Text, imeAction = ImeAction.Done),
+                        KeyboardOptions.Default.copy(keyboardType = KeyboardType.Text, imeAction = ImeAction.Done),
                     keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
                     onValueChanged = { formState.value = formState.value.copy { longName = it } },
                 )
@@ -112,18 +112,17 @@ fun UserConfigScreen(viewModel: RadioConfigViewModel = hiltViewModel(), onBack: 
                 EditTextPreference(
                     title = stringResource(Res.string.short_name),
                     value = formState.value.shortName,
-                    maxSize = 4, // short_name max_size:5
+                    maxSize = 4,
                     enabled = state.connected,
                     isError = !validShortName,
                     keyboardOptions =
-                    KeyboardOptions.Default.copy(keyboardType = KeyboardType.Text, imeAction = ImeAction.Done),
+                        KeyboardOptions.Default.copy(keyboardType = KeyboardType.Text, imeAction = ImeAction.Done),
                     keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
                     onValueChanged = { formState.value = formState.value.copy { shortName = it } },
                 )
                 HorizontalDivider()
                 RegularPreference(
                     title = stringResource(Res.string.hardware_model),
-                    // We wrap it with our helper here:
                     subtitle = ModelNameHelper.getFriendlyName(formState.value.hwModel.name),
                     onClick = {},
                 )
@@ -135,8 +134,8 @@ fun UserConfigScreen(viewModel: RadioConfigViewModel = hiltViewModel(), onBack: 
                 val currentType = TacticalIconManager.getTypeFromName(formState.value.longName)
 
                 RegularPreference(
-                    title = "Unit Type", // Label
-                    subtitle = currentType.name, // Shows "SOLDIER", "TANK", etc.
+                    title = "Unit Type",
+                    subtitle = currentType.name,
                     onClick = { showUnitDialog.value = true },
                 )
                 HorizontalDivider()
@@ -153,19 +152,17 @@ fun UserConfigScreen(viewModel: RadioConfigViewModel = hiltViewModel(), onBack: 
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .clickable {
-                                                // 1. Get the Clean Name (Remove old emojis)
-                                                val cleanName = TacticalIconManager.getCleanName(formState.value.longName)
+                                                // --- UPDATED LOGIC: Use generateFullLongName ---
+                                                // This ensures we keep the Op ID and Mission ID when changing the Icon
+                                                val newLongName = TacticalIconManager.generateFullLongName(
+                                                    currentLongName = formState.value.longName,
+                                                    newUnitType = type
+                                                )
 
-                                                // 2. Get the New Emoji
-                                                val newEmoji = TacticalIconManager.getEmojiForType(type)
+                                                // Update the Manager logic
+                                                TacticalIconManager.myCurrentEmoji = TacticalIconManager.getEmojiForType(type)
 
-                                                // 3. Combine them: "Commander" + " " + "🛡️"
-                                                val newLongName = "$cleanName $newEmoji".trim()
-
-                                                // Tell the Manager: "This is me! Remember this icon!"
-                                                TacticalIconManager.myCurrentEmoji = newEmoji
-
-                                                // 4. Save to Form State
+                                                // Update UI
                                                 formState.value = formState.value.copy { longName = newLongName }
 
                                                 showUnitDialog.value = false
@@ -180,16 +177,62 @@ fun UserConfigScreen(viewModel: RadioConfigViewModel = hiltViewModel(), onBack: 
                         }
                     )
                 }
-                // -------------------------
 
-
+                // --- NEW: Operation ID Input ---
+                EditTextPreference(
+                    title = "Operation ID",
+                    // Extract current ID from the long name
+                    value = TacticalIconManager.getOperationId(formState.value.longName),
+                    maxSize = 10,
+                    enabled = state.connected,
+                    isError = false,
+                    keyboardOptions = KeyboardOptions.Default.copy(
+                        keyboardType = KeyboardType.Text,
+                        imeAction = ImeAction.Done
+                    ),
+                    keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
+                    onValueChanged = { newOpId: String ->
+                        // Safely update just the Op ID part of the name
+                        val newFullName = TacticalIconManager.generateFullLongName(
+                            currentLongName = formState.value.longName,
+                            newOpId = newOpId
+                        )
+                        formState.value = formState.value.copy { longName = newFullName }
+                    },
+                )
                 HorizontalDivider()
+
+                // --- NEW: Mission ID Input ---
+                EditTextPreference(
+                    title = "Mission ID",
+                    // Extract current ID from the long name
+                    value = TacticalIconManager.getMissionId(formState.value.longName),
+                    maxSize = 10,
+                    enabled = state.connected,
+                    isError = false,
+                    keyboardOptions = KeyboardOptions.Default.copy(
+                        keyboardType = KeyboardType.Text,
+                        imeAction = ImeAction.Done
+                    ),
+                    keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
+                    onValueChanged = { newMissionId: String ->
+                        // Safely update just the Mission ID part of the name
+                        val newFullName = TacticalIconManager.generateFullLongName(
+                            currentLongName = formState.value.longName,
+                            newMissionId = newMissionId
+                        )
+                        formState.value = formState.value.copy { longName = newFullName }
+                    },
+                )
+                HorizontalDivider()
+                // -------------------------------------
+
                 SwitchPreference(
                     title = stringResource(Res.string.unmessageable),
                     summary = stringResource(Res.string.unmonitored_or_infrastructure),
                     checked =
-                    formState.value.isUnmessagable ||
-                        (firmwareVersion < DeviceVersion("2.6.9") && formState.value.role.isUnmessageableRole()),
+                        formState.value.isUnmessagable ||
+                                (firmwareVersion < DeviceVersion("2.6.9") && formState.value.role.isUnmessageableRole()),
                     enabled = formState.value.hasIsUnmessagable() || firmwareVersion >= DeviceVersion("2.6.9"),
                     onCheckedChange = { formState.value = formState.value.copy { isUnmessagable = it } },
                     containerColor = CardDefaults.cardColors().containerColor,

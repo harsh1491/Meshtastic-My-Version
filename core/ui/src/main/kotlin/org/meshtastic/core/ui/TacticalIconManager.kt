@@ -1,47 +1,34 @@
 package org.meshtastic.core.ui
 
-// IMPORTANT: If 'R' is red, click it and press Alt+Enter to import your app's R file.
-// It will likely be: import com.geeksville.mesh.R
-// OR: import org.meshtastic.core.ui.R (if you moved images to core)
+// IMPORTANT: Ensure this R import matches your project structure
+// import com.geeksville.mesh.R
 
 /**
- * Manages tactical markers for the Defense Dynamics project.
- * Detects hidden emojis in user names and returns the correct military icon.
+ * Manages tactical markers and IDs for the Defense Dynamics project.
+ * Handles: Unit Icons 🛡️, Operation IDs (Op), and Mission IDs {Mission}
  */
 object TacticalIconManager {
 
     // --- The Secret Codes (Emojis) ---
-    // We append these to the Long Name to signal what unit we are.
-    // NOTE: These specific emojis act as our "Digital Handshake"
     private const val CODE_TANK = "🛡️"
     private const val CODE_HELI = "🚁"
     private const val CODE_DRONE = "✈️"
 
-    // Stores the user's choice temporarily so the Map updates INSTANTLY
+    // Stores the user's choice temporarily
     var myCurrentEmoji: String? = null
 
-    // --- The Marker Logic ---
+    // --- Marker Logic ---
 
-    /**
-     * Looks at a user's name and returns the correct PNG resource ID.
-     * Usage: Image(painterResource(id = TacticalIconManager.getMarkerDrawable(node.longName)))
-     */
     fun getMarkerDrawable(longName: String?): Int {
-        if (longName == null) return R.drawable.marker_soldier // Default Safety
-
+        if (longName == null) return R.drawable.marker_soldier
         return when {
             longName.contains(CODE_TANK) -> R.drawable.marker_tank
             longName.contains(CODE_HELI) -> R.drawable.marker_heli
             longName.contains(CODE_DRONE) -> R.drawable.marker_drone
-            else -> R.drawable.marker_soldier // Default for everyone else
+            else -> R.drawable.marker_soldier
         }
     }
 
-
-    /**
-     * Helper to find out what type a user currently is.
-     * Useful for the Settings Page "Current Selection" text.
-     */
     fun getTypeFromName(longName: String?): UnitType {
         if (longName == null) return UnitType.SOLDIER
         return when {
@@ -52,34 +39,92 @@ object TacticalIconManager {
         }
     }
 
-    /**
-     * Cleans the name for display.
-     * Removes the secret emoji so the user just sees "Commander" instead of "Commander 🛡️"
-     */
-    fun getCleanName(longName: String?): String {
-        if (longName == null) return "Unknown"
-
-        return longName
-            .replace(CODE_TANK, "")
-            .replace(CODE_HELI, "")
-            .replace(CODE_DRONE, "")
-            .trim() // Removes any extra spaces left behind
-    }
-
-    /**
-     * Used in the Settings Page.
-     * Returns the Emoji code that corresponds to a specific type.
-     */
     fun getEmojiForType(type: UnitType): String {
         return when (type) {
-            UnitType.SOLDIER -> "" // Soldier is default, no emoji needed
+            UnitType.SOLDIER -> ""
             UnitType.TANK -> CODE_TANK
             UnitType.HELI -> CODE_HELI
             UnitType.DRONE -> CODE_DRONE
         }
     }
 
-    // Simple Enum to use in our Dropdown Menu later
+    // --- NEW: Operation & Mission ID Logic ---
+
+    /**
+     * 1. Extract The Real Name (Viper)
+     * Removes Emojis 🛡️, Op IDs (Alpha), and Mission IDs {Rescue}
+     */
+    fun getCleanName(longName: String?): String {
+        if (longName == null) return "Unknown"
+        var name = longName
+
+        // Remove Emojis
+        name = name.replace(CODE_TANK, "")
+            .replace(CODE_HELI, "")
+            .replace(CODE_DRONE, "")
+
+        // Remove Op ID -> matches anything inside parentheses (...)
+        name = name.replace("\\(.*?\\)".toRegex(), "")
+
+        // Remove Mission ID -> matches anything inside brackets {...}
+        name = name.replace("\\{.*?\\}".toRegex(), "")
+
+        return name.trim()
+    }
+
+    /**
+     * 2. Extract Operation ID
+     * Looks for text inside (). Example: "Viper (Alpha)" -> returns "Alpha"
+     */
+    fun getOperationId(longName: String?): String {
+        if (longName == null) return ""
+        // Regex: Find text between ( and )
+        val match = "\\((.*?)\\)".toRegex().find(longName)
+        return match?.groupValues?.get(1) ?: ""
+    }
+
+    /**
+     * 3. Extract Mission ID
+     * Looks for text inside {}. Example: "Viper {Rescue}" -> returns "Rescue"
+     */
+    fun getMissionId(longName: String?): String {
+        if (longName == null) return ""
+        // Regex: Find text between { and }
+        val match = "\\{(.*?)\\}".toRegex().find(longName)
+        return match?.groupValues?.get(1) ?: ""
+    }
+
+    /**
+     * 4. The Master Builder
+     * Takes all the pieces and builds the final string: "Name 🛡️ (Op) {Mission}"
+     * * You can pass specific new values (e.g. newOpId), otherwise it keeps the existing ones.
+     */
+    fun generateFullLongName(
+        currentLongName: String,
+        newOpId: String? = null,
+        newMissionId: String? = null,
+        newUnitType: UnitType? = null
+    ): String {
+
+        // A. Get the base name (e.g. "Viper") without any junk
+        val baseName = getCleanName(currentLongName)
+
+        // B. Determine which values to use (New one? or Keep existing?)
+        val opId = newOpId ?: getOperationId(currentLongName)
+        val missionId = newMissionId ?: getMissionId(currentLongName)
+        val type = newUnitType ?: getTypeFromName(currentLongName)
+
+        val emoji = getEmojiForType(type)
+
+        // C. Format the parts
+        val opPart = if (opId.isNotBlank()) "($opId)" else ""
+        val missionPart = if (missionId.isNotBlank()) "{$missionId}" else ""
+
+        // D. Combine: "Viper" + "🛡️" + "(Alpha)" + "{Rescue}"
+        // .replace removes double spaces if a part is missing
+        return "$baseName $emoji $opPart $missionPart".replace("\\s+".toRegex(), " ").trim()
+    }
+
     enum class UnitType {
         SOLDIER, TANK, HELI, DRONE
     }
