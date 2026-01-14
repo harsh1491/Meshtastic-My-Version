@@ -169,19 +169,28 @@ private fun MessageListPagedContent(
 ) {
     // Calculate unread divider position
     val unreadDividerIndex by
-        remember(state.messages.itemCount, state.firstUnreadMessageUuid) {
-            derivedStateOf {
-                state.firstUnreadMessageUuid?.let { uuid ->
-                    (0 until state.messages.itemCount).firstOrNull { index -> state.messages[index]?.uuid == uuid }
-                }
+    remember(state.messages.itemCount, state.firstUnreadMessageUuid) {
+        derivedStateOf {
+            state.firstUnreadMessageUuid?.let { uuid ->
+                (0 until state.messages.itemCount).firstOrNull { index -> state.messages[index]?.uuid == uuid }
             }
         }
+    }
 
     Box(modifier = modifier.fillMaxSize()) {
         LazyColumn(modifier = Modifier.fillMaxSize(), state = listState, reverseLayout = true) {
             items(count = state.messages.itemCount, key = state.messages.itemKey { it.uuid }) { index ->
                 val message = state.messages[index]
-                if (message != null) {
+
+                // --- NEW: Filter out hidden messages ---
+                val cleanText = message?.text?.trim() ?: ""
+                val isHidden = cleanText.startsWith("TRK", ignoreCase = true) ||
+                        cleanText.startsWith("ZONE", ignoreCase = true) ||
+                        cleanText.startsWith("DELZONE", ignoreCase = true) ||
+                        cleanText.startsWith("\$\$TRK", ignoreCase = true)
+                // ---------------------------------------
+
+                if (message != null && !isHidden) {
                     renderPagedChatMessageRow(
                         message = message,
                         state = state,

@@ -598,22 +598,40 @@ private fun LazyListScope.contactListPagedItems(
             contact?.let { "${it.contactKey}#$index" } ?: "contact_placeholder_$index"
         },
     ) { index ->
-        val contact = contacts[index]
-        if (contact != null) {
-            val selected by remember { derivedStateOf { selectedList.contains(contact.contactKey) } }
-            val isActive = remember(contact.contactKey, activeContactKey) { contact.contactKey == activeContactKey }
+        val originalContact = contacts[index]
+        if (originalContact != null) {
+
+            // --- FILTER: Hide Tactical Data in Preview (FIXED NULL SAFETY) ---
+            // We use ?.trim() and ?: "" to handle if message is null
+            val cleanText = originalContact.lastMessageText?.trim() ?: ""
+
+            val isHidden = cleanText.startsWith("TRK", ignoreCase = true) ||
+                    cleanText.startsWith("ZONE", ignoreCase = true) ||
+                    cleanText.startsWith("DELZONE", ignoreCase = true) ||
+                    cleanText.startsWith("\$\$TRK", ignoreCase = true)
+
+            // If hidden, we create a copy of the contact with clean text
+            val displayContact = if (isHidden) {
+                originalContact.copy(lastMessageText = "Tactical Data")
+            } else {
+                originalContact
+            }
+            // ---------------------------------------------
+
+            val selected by remember { derivedStateOf { selectedList.contains(displayContact.contactKey) } }
+            val isActive = remember(displayContact.contactKey, activeContactKey) { displayContact.contactKey == activeContactKey }
 
             ContactItem(
-                contact = contact,
+                contact = displayContact,
                 selected = selected,
                 isActive = isActive,
-                onClick = { onClick(contact) },
+                onClick = { onClick(displayContact) },
                 onLongClick = {
-                    onLongClick(contact)
+                    onLongClick(displayContact)
                     haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                 },
                 channels = channels,
-                onNodeChipClick = { onNodeChipClick(contact) },
+                onNodeChipClick = { onNodeChipClick(displayContact) },
             )
         }
     }
