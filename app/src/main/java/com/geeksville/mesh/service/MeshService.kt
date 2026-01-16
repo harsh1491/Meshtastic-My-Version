@@ -131,6 +131,8 @@ import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import kotlin.math.absoluteValue
 
+import org.meshtastic.core.ui.TacticalIconManager
+
 /**
  * Handles all the communication with android apps. Also keeps an internal model of the network state.
  *
@@ -817,6 +819,42 @@ class MeshService : Service() {
 
                 when (data.portnumValue) {
                     Portnums.PortNum.TEXT_MESSAGE_APP_VALUE -> {
+
+
+                        // --- TACTICAL LOGIC START ---
+                        val rawText = dataPacket.text ?: ""
+
+                        // 1. Get the Sender's Node Info to extract IDs
+                        val senderNode = nodeDBbyNodeNum[packet.from]
+                        val senderLongName = senderNode?.user?.longName
+
+                        // 2. Extract IDs using your TacticalIconManager
+                        // If extraction fails, we fallback to defaults so the app doesn't crash
+                        val extractedOpId = TacticalIconManager.getOperationId(senderLongName).ifBlank { "OP-DEF-DEFAULT" }
+                        val extractedMsnId = TacticalIconManager.getMissionId(senderLongName).ifBlank { "MSN-REC-DEFAULT" }
+
+                        // 3. Logic: If it is a Command, send raw. If Chat, prefix with "CHAT|"
+                        val finalPayload = if (rawText.startsWith("TRK", ignoreCase = true) ||
+                            rawText.startsWith("ZONE", ignoreCase = true) ||
+                            rawText.startsWith("DELZONE", ignoreCase = true)) {
+                            rawText
+                        } else {
+                            "CHAT|$rawText"
+                        }
+
+                        // 4. Pass EVERYTHING to the bridge (including the new IDs)
+                        TacticalBridge.onNewMessage(
+                            payloadText = finalPayload,
+                            senderId = fromId,
+                            receiverId = toNodeID(packet.to),
+                            latitude = senderNode?.latitude ?: 0.0,
+                            longitude = senderNode?.longitude ?: 0.0,
+                            operationId = extractedOpId, // <--- This fixes your error
+                            missionId = extractedMsnId   // <--- This fixes your error
+                        )
+                        // --- TACTICAL LOGIC END ---
+
+
                         if (data.replyId != 0 && data.emoji == 0) {
                             Timber.d("Received REPLY from $fromId")
                             rememberDataPacket(dataPacket)

@@ -31,6 +31,9 @@ plugins {
     alias(libs.plugins.secrets)
     alias(libs.plugins.dokka)
     alias(libs.plugins.kover)
+
+    // --- ADD THIS LINE HERE ---
+    id("org.jetbrains.kotlin.plugin.serialization")
 }
 
 val keystorePropertiesFile = rootProject.file("keystore.properties")
