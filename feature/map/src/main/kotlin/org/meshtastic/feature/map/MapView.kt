@@ -89,6 +89,7 @@ fun MapView(
         modifier = Modifier.fillMaxSize(),
         factory = { ctx ->
             MapView(ctx).apply {
+                // 1. Basic Setup
                 setMultiTouchControls(true)
 
                 if (initialCenter != null) {
@@ -98,6 +99,7 @@ fun MapView(
                     controller.setZoom(15.0)
                 }
 
+                // 2. Listeners
                 addMapListener(object : MapListener {
                     override fun onScroll(event: ScrollEvent?): Boolean {
                         val center = mapCenter as? GeoPoint
@@ -111,24 +113,39 @@ fun MapView(
                     }
                 })
 
-                // --- SETUP "MY LOCATION" ---
+                // 3. Location Overlay
                 val locationOverlay = MyLocationNewOverlay(GpsMyLocationProvider(ctx), this)
-
                 if (myIconBitmap != null) {
                     locationOverlay.setPersonIcon(myIconBitmap)
                     locationOverlay.setDirectionIcon(myIconBitmap)
                 }
-
                 locationOverlay.enableFollowLocation()
                 overlays.add(locationOverlay)
 
+                // 4. OFFLINE MAP SETUP (The Fixed Part)
                 val mbtilesFile = File(ctx.getExternalFilesDir(null), "offline.mbtiles")
+
                 if (mbtilesFile.exists()) {
                     try {
                         val provider = OfflineTileProvider(SimpleRegisterReceiver(ctx), arrayOf(mbtilesFile))
-                        setTileProvider(provider)
-                        setTileSource(XYTileSource("mbtiles", 0, 22, 256, ".png", arrayOf("http://placeholder.org")))
-                        setUseDataConnection(false)
+
+                        // Create a source matching the Python script ("OpenStreetMap")
+                        val source = XYTileSource(
+                            "OpenStreetMap",
+                            0,    // <--- CHANGE THIS: Was 10, now 0 (or 2 or 3)
+                            17,   // Max zoom (kept at 17 for your cities)
+                            256,
+                            ".png",
+                            arrayOf("http://placeholder.org")
+                        )
+
+                        provider.setTileSource(source)
+
+                        // Notice: No 'mapView.' prefix here. We are inside 'apply', so we just call the methods directly.
+                        this.setTileProvider(provider)
+                        this.setTileSource(source)
+                        this.setUseDataConnection(false)
+
                     } catch (e: Exception) { e.printStackTrace() }
                 }
             }
